@@ -1,0 +1,15 @@
+services:
+  backhaul-api:
+    build: .
+    image: camera-backhaul-api:local
+    ports:
+      - "8000:8000"
+    environment:
+      TOPOLOGY_PATH: /srv/app/topology.json
+      DB_PATH: /srv/app/data/reservations.db
+    volumes:
+      - reservations:/srv/app/data
+    restart: unless-stopped
+
+volumes:
+  reservations:

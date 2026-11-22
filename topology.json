@@ -1,0 +1,16 @@
+{
+  "switches": ["SW1", "SW2", "SW3", "SW4", "SW5", "SW6", "SW7", "SW8"],
+  "links": [
+    {"a": "SW1", "b": "SW2", "capacity_a_to_b": 10, "capacity_b_to_a": 4},
+    {"a": "SW2", "b": "SW8", "capacity_a_to_b": 10, "capacity_b_to_a": 10},
+
+    {"a": "SW1", "b": "SW6", "capacity_a_to_b": 10, "capacity_b_to_a": 10},
+    {"a": "SW6", "b": "SW7", "capacity_a_to_b": 10, "capacity_b_to_a": 10},
+    {"a": "SW7", "b": "SW8", "capacity_a_to_b": 10, "capacity_b_to_a": 10},
+
+    {"a": "SW3", "b": "SW4", "capacity_a_to_b": 10, "capacity_b_to_a": 10},
+    {"a": "SW4", "b": "SW5", "capacity_a_to_b": 10, "capacity_b_to_a": 10},
+    {"a": "SW5", "b": "SW8", "capacity_a_to_b": 10, "capacity_b_to_a": 10},
+    {"a": "SW3", "b": "SW6", "capacity_a_to_b": 10, "capacity_b_to_a": 10}
+  ]
+}
