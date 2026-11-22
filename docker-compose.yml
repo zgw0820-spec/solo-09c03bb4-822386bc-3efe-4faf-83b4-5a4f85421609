@@ -11,5 +11,22 @@ services:
       - reservations:/srv/app/data
     restart: unless-stopped
 
+  # Optional second process sharing the same reservation store.  It uses the
+  # identical topology, so both processes bind the same topology fingerprint;
+  # a process started with a different topology against this volume refuses
+  # to start.  Enable with: docker compose --profile shared-store up --build
+  backhaul-api-b:
+    build: .
+    image: camera-backhaul-api:local
+    profiles: ["shared-store"]
+    ports:
+      - "8001:8000"
+    environment:
+      TOPOLOGY_PATH: /srv/app/topology.json
+      DB_PATH: /srv/app/data/reservations.db
+    volumes:
+      - reservations:/srv/app/data
+    restart: unless-stopped
+
 volumes:
   reservations:

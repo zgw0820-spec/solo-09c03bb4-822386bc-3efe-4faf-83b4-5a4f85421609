@@ -6,6 +6,7 @@ unordered pair of switches and carries one capacity per direction.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -166,6 +167,85 @@ class Topology:
                 for link in self.links
             ],
         }
+
+
+def canonical_description(topology: Topology) -> dict[str, Any]:
+    """Semantic, order-independent description of a topology.
+
+    Two configuration files that agree on the switch set, the physical links
+    and every per-direction capacity produce the same description no matter
+    how the file orders switches/links or labels the ``a``/``b`` endpoints
+    (links are canonicalised at parse time and stored sorted by link id).
+    Only semantically identical configurations may share one reservation
+    store, so this is exactly what the store binding compares.
+    """
+    return {
+        "switches": sorted(topology.switches),
+        "links": [
+            {
+                "link": link.link_id,
+                "a": link.a,
+                "b": link.b,
+                "capacity_a_to_b": link.cap_ab,
+                "capacity_b_to_a": link.cap_ba,
+            }
+            for link in topology.links
+        ],
+    }
+
+
+def topology_fingerprint(topology: Topology) -> str:
+    """Stable SHA-256 fingerprint of the canonical description."""
+    payload = json.dumps(
+        canonical_description(topology), sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def describe_differences(
+    stored: Mapping[str, Any], current: Mapping[str, Any]
+) -> list[str]:
+    """Human-readable differences between two canonical descriptions.
+
+    Used to explain why a configured topology may not use a reservation
+    store that is already bound to a different topology.
+    """
+    differences: list[str] = []
+
+    stored_switches = set(stored.get("switches", []))
+    current_switches = set(current.get("switches", []))
+    missing = sorted(stored_switches - current_switches)
+    extra = sorted(current_switches - stored_switches)
+    if missing:
+        differences.append(
+            f"switch(es) missing from the configuration: {', '.join(missing)}"
+        )
+    if extra:
+        differences.append(
+            f"switch(es) not in the bound topology: {', '.join(extra)}"
+        )
+
+    stored_links = {link["link"]: link for link in stored.get("links", [])}
+    current_links = {link["link"]: link for link in current.get("links", [])}
+    for link_id in sorted(stored_links.keys() - current_links.keys()):
+        differences.append(f"physical link {link_id} missing from the configuration")
+    for link_id in sorted(current_links.keys() - stored_links.keys()):
+        differences.append(f"physical link {link_id} not in the bound topology")
+    for link_id in sorted(stored_links.keys() & current_links.keys()):
+        bound = stored_links[link_id]
+        configured = current_links[link_id]
+        for key in ("capacity_a_to_b", "capacity_b_to_a"):
+            if bound[key] != configured[key]:
+                direction = (
+                    f"{bound['a']}->{bound['b']}"
+                    if key == "capacity_a_to_b"
+                    else f"{bound['b']}->{bound['a']}"
+                )
+                differences.append(
+                    f"link {link_id} capacity {direction}: "
+                    f"bound {bound[key]}, configured {configured[key]}"
+                )
+    return differences
 
 
 def _as_positive_int(value: Any, where: str) -> int:

@@ -243,6 +243,80 @@ def allocate(
     )
 
 
+def validate_reservations(
+    topology: Topology, reservations: Iterable[Reservation]
+) -> list[str]:
+    """Check that stored reservations remain honourable on ``topology``.
+
+    Used when a reservation store that predates topology bindings is opened
+    for the first time: every stored primary/backup pair must still be a
+    valid link-disjoint pair on this topology, and the original failover
+    rules (primaries carry traffic normally; a single physical-link failure
+    moves only the affected flows to their backups) must keep every directed
+    edge within capacity in the normal state and in every failure scenario.
+
+    Returns a list of human-readable problems; an empty list means the
+    stored reservations can be adopted as-is.
+    """
+    reservations = tuple(reservations)
+    problems: list[str] = []
+
+    for reservation in reservations:
+        parsed: dict[str, tuple[str, ...]] = {}
+        for label, path in (
+            ("primary", reservation.primary_path),
+            ("backup", reservation.backup_path),
+        ):
+            nodes = tuple(path)
+            prefix = f"flow {reservation.flow_id!r} {label} path"
+            if len(nodes) < 2:
+                problems.append(f"{prefix} {list(nodes)!r} has fewer than two switches")
+                continue
+            if nodes[0] != reservation.src or nodes[-1] != reservation.dst:
+                problems.append(
+                    f"{prefix} {list(nodes)!r} does not run "
+                    f"{reservation.src!r} -> {reservation.dst!r}"
+                )
+            try:
+                topology.path_edges(nodes)
+            except KeyError as exc:
+                problems.append(
+                    f"{prefix} {list(nodes)!r} uses a link that is not in the "
+                    f"topology: {exc}"
+                )
+                continue
+            parsed[label] = nodes
+        if len(parsed) == 2:
+            shared = sorted(
+                set(topology.path_links(parsed["primary"]))
+                & set(topology.path_links(parsed["backup"]))
+            )
+            if shared:
+                problems.append(
+                    f"flow {reservation.flow_id!r} primary and backup share "
+                    f"physical link(s): {', '.join(shared)}"
+                )
+    if problems:
+        # Broken paths make the capacity accounting below meaningless.
+        return problems
+
+    capacity = topology.directed_capacity
+    usage = ScenarioUsage(topology, reservations)
+
+    def collect(scenario_name: str, rows: Mapping[Edge, int]) -> None:
+        for edge, used in sorted(rows.items()):
+            if used > capacity[edge]:
+                problems.append(
+                    f"scenario {scenario_name}: {edge[0]}->{edge[1]} carries "
+                    f"{used}, capacity is {capacity[edge]}"
+                )
+
+    collect("normal", usage.normal)
+    for link in topology.links:
+        collect(f"failure:{link.link_id}", usage.failure[link.link_id])
+    return problems
+
+
 # -- reporting ---------------------------------------------------------------
 
 

@@ -61,6 +61,7 @@ class TopologyResponse(BaseModel):
     switches: list[str]
     max_switches: int
     links: list[LinkModel]
+    fingerprint: str
 
 
 class FlowResponse(BaseModel):
@@ -86,6 +87,11 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         topology = load_topology(topology_path)
+        # ReservationStore binds the database to this exact topology (or
+        # verifies the existing binding, re-validating stored reservations
+        # when adopting a pre-binding database).  A conflicting topology or
+        # unhonourable stored reservations raise TopologyBindingError here,
+        # so the process refuses to start and the database is left untouched.
         app.state.topology = topology
         app.state.store = ReservationStore(db_path, topology)
         yield
@@ -118,6 +124,7 @@ def create_app(
             "status": "ok",
             "switches": len(request.app.state.topology.switches),
             "links": len(request.app.state.topology.links),
+            "topology_fingerprint": request.app.state.store.fingerprint[:12],
         }
 
     @app.get(
@@ -127,7 +134,10 @@ def create_app(
         summary="Fixed switch topology and per-direction link capacities",
     )
     def topology(request: Request) -> TopologyResponse:
-        return TopologyResponse(**request.app.state.topology.describe())
+        return TopologyResponse(
+            **request.app.state.topology.describe(),
+            fingerprint=request.app.state.store.fingerprint,
+        )
 
     @app.post(
         "/flows",
